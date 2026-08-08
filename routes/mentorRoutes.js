@@ -7,6 +7,7 @@ const Activity = require("../models/Activity");
 const LessonProgress = require("../models/LessonProgress");
 const Quiz = require("../models/Quiz");
 const QuizAttempt = require("../models/QuizAttempt");
+const bcrypt = require("bcryptjs");
 
 const {
   authMiddleware,
