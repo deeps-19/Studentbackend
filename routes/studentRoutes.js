@@ -482,5 +482,354 @@ router.get(
     }
   }
 );
+router.get(
+  "/lessons/:lessonId",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+
+      const { lessonId } = req.params;
+      const studentId = req.user.id;
+
+      // Validate MongoDB ID
+      if (!mongoose.Types.ObjectId.isValid(lessonId)) {
+        return res.status(400).json({
+          message: "Invalid lesson ID",
+        });
+      }
+
+      // Find lesson
+      const lesson = await Lesson.findById(
+        lessonId
+      ).lean();
+
+      if (!lesson) {
+        return res.status(404).json({
+          message: "Lesson not found",
+        });
+      }
+
+      // Find course
+      const course = await Course.findById(
+        lesson.courseId
+      )
+        .select("title description")
+        .lean();
+
+      // Find student's progress
+      const progress =
+        await LessonProgress.findOne({
+          studentId,
+          lessonId,
+        }).lean();
+
+      // Get all lessons of this course
+      const totalLessons =
+        await Lesson.countDocuments({
+          courseId: lesson.courseId,
+        });
+
+      // Completed lessons
+      const completedLessons =
+        await LessonProgress.countDocuments({
+          studentId,
+          courseId: lesson.courseId,
+          status: "completed",
+        });
+
+      const courseProgress =
+        totalLessons > 0
+          ? Math.round(
+              (completedLessons /
+                totalLessons) *
+                100
+            )
+          : 0;
+
+      res.json({
+        lesson,
+        course,
+
+        progress: {
+          completed:
+            progress?.status ===
+            "completed",
+
+          timeSpent:
+            progress?.timeSpent || 0,
+
+          courseProgress,
+
+          completedLessons,
+
+          totalLessons,
+        },
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Get lesson error:",
+        error
+      );
+
+      res.status(500).json({
+        message: error.message,
+      });
+    }
+  }
+);
+
+
+// ======================================================
+// START LESSON
+// ======================================================
+
+router.post(
+  "/lessons/:lessonId/start",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+
+    try {
+
+      const {
+        lessonId,
+      } = req.params;
+
+      const studentId =
+        req.user.id;
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          lessonId
+        )
+      ) {
+        return res.status(400).json({
+          message: "Invalid lesson ID",
+        });
+      }
+
+      const lesson =
+        await Lesson.findById(
+          lessonId
+        );
+
+      if (!lesson) {
+        return res.status(404).json({
+          message:
+            "Lesson not found",
+        });
+      }
+
+      let progress =
+        await LessonProgress.findOne({
+          studentId,
+          lessonId,
+        });
+
+      // Create progress only first time
+      if (!progress) {
+
+        progress =
+          await LessonProgress.create({
+            studentId,
+            courseId:
+              lesson.courseId,
+            lessonId,
+            status: "started",
+            startedAt: new Date(),
+            timeSpent: 0,
+          });
+
+        // Record activity
+        await Activity.create({
+          studentId,
+          courseId:
+            lesson.courseId,
+          lessonId,
+          type:
+            "LESSON_STARTED",
+          title:
+            `Started ${lesson.title}`,
+          timeSpent: 0,
+        });
+      }
+
+      res.json({
+        message:
+          "Lesson started",
+        progress,
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Start lesson error:",
+        error
+      );
+
+      res.status(500).json({
+        message: error.message,
+      });
+    }
+  }
+);
+
+
+// ======================================================
+// COMPLETE LESSON
+// ======================================================
+
+router.post(
+  "/lessons/:lessonId/complete",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+
+    try {
+
+      const {
+        lessonId,
+      } = req.params;
+
+      const studentId =
+        req.user.id;
+
+      const {
+        timeSpent = 0,
+      } = req.body;
+
+      // Validate ID
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          lessonId
+        )
+      ) {
+        return res.status(400).json({
+          message:
+            "Invalid lesson ID",
+        });
+      }
+
+      // Find lesson
+      const lesson =
+        await Lesson.findById(
+          lessonId
+        );
+
+      if (!lesson) {
+        return res.status(404).json({
+          message:
+            "Lesson not found",
+        });
+      }
+
+      // Update progress
+      const progress =
+        await LessonProgress.findOneAndUpdate(
+          {
+            studentId,
+            lessonId,
+          },
+          {
+            studentId,
+
+            courseId:
+              lesson.courseId,
+
+            lessonId,
+
+            status:
+              "completed",
+
+            completedAt:
+              new Date(),
+
+            timeSpent:
+              Number(timeSpent) || 0,
+          },
+          {
+            upsert: true,
+            new: true,
+          }
+        );
+
+      // Create activity
+      const activity =
+        await Activity.create({
+          studentId,
+
+          courseId:
+            lesson.courseId,
+
+          lessonId,
+
+          type:
+            "LESSON_COMPLETED",
+
+          title:
+            `Completed ${lesson.title}`,
+
+          timeSpent:
+            Number(timeSpent) || 0,
+        });
+
+      // Course progress
+      const totalLessons =
+        await Lesson.countDocuments({
+          courseId:
+            lesson.courseId,
+        });
+
+      const completedLessons =
+        await LessonProgress.countDocuments({
+          studentId,
+          courseId:
+            lesson.courseId,
+          status:
+            "completed",
+        });
+
+      const courseProgress =
+        totalLessons > 0
+          ? Math.round(
+              (completedLessons /
+                totalLessons) *
+                100
+            )
+          : 0;
+
+      res.json({
+        message:
+          "Lesson completed",
+
+        progress,
+
+        activity,
+
+        courseProgress,
+
+        completedLessons,
+
+        totalLessons,
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Complete lesson error:",
+        error
+      );
+
+      res.status(500).json({
+        message:
+          error.message,
+      });
+    }
+  }
+);
+
 
 module.exports = router;
