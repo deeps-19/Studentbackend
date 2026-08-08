@@ -61,9 +61,7 @@ router.get(
       const overallProgress =
         totalLessons > 0
           ? Math.round(
-              (completedLessons /
-                totalLessons) *
-                100
+              (completedLessons / totalLessons) * 100
             )
           : 0;
 
@@ -81,47 +79,64 @@ router.get(
           .limit(5);
 
       // -----------------------------------------
-      // 7. Course progress
+      // 7. Get all courses
       // -----------------------------------------
 
-      const courses =
-        await Course.find();
+      const courses = await Course.find();
 
-      const courseProgress = courses.map(
-        (course) => {
+      // -----------------------------------------
+      // 8. Course progress
+      // -----------------------------------------
 
+      const courseProgress = await Promise.all(
+        courses.map(async (course) => {
+
+          // Get lessons from Lesson collection
           const courseLessons =
-            course.lessons || [];
+            await Lesson.find({
+              courseId: course._id,
+            });
 
-          const courseLessonIds =
-            courseLessons.map(
-              (lesson) =>
-                lesson._id.toString()
+          const totalCourseLessons =
+            courseLessons.length;
+
+          // Get lesson IDs belonging to this course
+          const lessonIds =
+            courseLessons.map((lesson) =>
+              lesson._id.toString()
             );
 
+          // Get student's progress for this course
           const courseProgressData =
-            progress.filter((item) =>
-              courseLessonIds.includes(
-                item.lessonId?.toString()
-              )
-            );
+            progress.filter((item) => {
 
+              return (
+                item.courseId?.toString() ===
+                  course._id.toString() &&
+                lessonIds.includes(
+                  item.lessonId?.toString()
+                )
+              );
+            });
+
+          // Completed lessons
           const completed =
             courseProgressData.filter(
               (item) =>
                 item.status === "completed"
             ).length;
 
-          const total =
-            courseLessons.length;
-
+          // Course percentage
           const percentage =
-            total > 0
+            totalCourseLessons > 0
               ? Math.round(
-                  (completed / total) * 100
+                  (completed /
+                    totalCourseLessons) *
+                    100
                 )
               : 0;
 
+          // Course time
           const timeSpent =
             courseProgressData.reduce(
               (sum, item) =>
@@ -132,16 +147,32 @@ router.get(
           return {
             courseId: course._id,
             title: course.title,
+
             completedLessons: completed,
-            totalLessons: total,
+
+            totalLessons:
+              totalCourseLessons,
+
             progress: percentage,
+
             timeSpent,
           };
-        }
+        })
       );
 
       // -----------------------------------------
-      // 8. Learning activity trend
+      // 9. Active courses
+      // -----------------------------------------
+
+      const activeCourses =
+        courseProgress.filter(
+          (course) =>
+            course.progress > 0 &&
+            course.progress < 100
+        ).length;
+
+      // -----------------------------------------
+      // 10. Learning activity trend
       // -----------------------------------------
 
       const activityTrend =
@@ -183,38 +214,36 @@ router.get(
         ]);
 
       // -----------------------------------------
-      // 9. Active courses
+      // 11. Convert _id to date
       // -----------------------------------------
 
-      const activeCourses =
-        courseProgress.filter(
-          (course) =>
-            course.progress > 0 &&
-            course.progress < 100
-        ).length;
+      const formattedActivityTrend =
+        activityTrend.map((item) => ({
+          date: item._id,
+          minutes: item.minutes,
+        }));
 
       // -----------------------------------------
-      // 10. Final response
+      // 12. Final response
       // -----------------------------------------
 
       res.json({
-
-        // Dashboard statistics
         completedLessons,
+
         totalLessons,
+
         totalTime,
+
         overallProgress,
+
         activeCourses,
 
-        // Course progress
         courses: courseProgress,
 
-        // Chart
-        activityTrend,
+        activityTrend:
+          formattedActivityTrend,
 
-        // Recent activity
         recentActivity,
-
       });
 
     } catch (error) {
