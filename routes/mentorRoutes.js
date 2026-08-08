@@ -1,7 +1,7 @@
 const express = require("express");
 
 const Course = require("../models/Course");
-const Lesson = require("../models/Lesson");
+const Lesson = require("../models/Lessons");
 const User = require("../models/User");
 const Activity = require("../models/Activity");
 const LessonProgress = require("../models/LessonProgress");
