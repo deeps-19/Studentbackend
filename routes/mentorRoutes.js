@@ -219,6 +219,28 @@ router.post(
   }
 );
 router.get(
+  "/students",
+  authMiddleware,
+  roleMiddleware("mentor"),
+  async (req, res) => {
+    try {
+      const students = await User.find({
+        role: "student",
+      }).select("-password");
+
+      res.status(200).json({
+        students,
+      });
+    } catch (error) {
+      console.error("Fetch students error:", error);
+
+      res.status(500).json({
+        message: error.message,
+      });
+    }
+  }
+);
+router.get(
   "/students/:studentId/activity",
   authMiddleware,
   roleMiddleware("mentor"),
