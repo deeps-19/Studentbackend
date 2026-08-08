@@ -21,51 +21,215 @@ router.get(
     try {
       const studentId = req.user.id;
 
+      // -----------------------------------------
+      // 1. Student lesson progress
+      // -----------------------------------------
+
       const progress = await LessonProgress.find({
         studentId,
       });
+
+      // -----------------------------------------
+      // 2. Completed lessons
+      // -----------------------------------------
 
       const completedLessons = progress.filter(
         (item) => item.status === "completed"
       ).length;
 
+      // -----------------------------------------
+      // 3. Total learning time
+      // -----------------------------------------
+
       const totalTime = progress.reduce(
-        (sum, item) => sum + item.timeSpent,
+        (sum, item) =>
+          sum + (item.timeSpent || 0),
         0
       );
 
-      const totalLessons = await Lesson.countDocuments();
+      // -----------------------------------------
+      // 4. Total lessons
+      // -----------------------------------------
+
+      const totalLessons =
+        await Lesson.countDocuments();
+
+      // -----------------------------------------
+      // 5. Overall progress
+      // -----------------------------------------
 
       const overallProgress =
         totalLessons > 0
           ? Math.round(
-              (completedLessons / totalLessons) * 100
+              (completedLessons /
+                totalLessons) *
+                100
             )
           : 0;
 
-      const recentActivity = await Activity.find({
-        studentId,
-      })
-        .populate("courseId", "title")
-        .populate("lessonId", "title")
-        .sort({ createdAt: -1 })
-        .limit(5);
+      // -----------------------------------------
+      // 6. Recent activity
+      // -----------------------------------------
+
+      const recentActivity =
+        await Activity.find({
+          studentId,
+        })
+          .populate("courseId", "title")
+          .populate("lessonId", "title")
+          .sort({ createdAt: -1 })
+          .limit(5);
+
+      // -----------------------------------------
+      // 7. Course progress
+      // -----------------------------------------
+
+      const courses =
+        await Course.find();
+
+      const courseProgress = courses.map(
+        (course) => {
+
+          const courseLessons =
+            course.lessons || [];
+
+          const courseLessonIds =
+            courseLessons.map(
+              (lesson) =>
+                lesson._id.toString()
+            );
+
+          const courseProgressData =
+            progress.filter((item) =>
+              courseLessonIds.includes(
+                item.lessonId?.toString()
+              )
+            );
+
+          const completed =
+            courseProgressData.filter(
+              (item) =>
+                item.status === "completed"
+            ).length;
+
+          const total =
+            courseLessons.length;
+
+          const percentage =
+            total > 0
+              ? Math.round(
+                  (completed / total) * 100
+                )
+              : 0;
+
+          const timeSpent =
+            courseProgressData.reduce(
+              (sum, item) =>
+                sum + (item.timeSpent || 0),
+              0
+            );
+
+          return {
+            courseId: course._id,
+            title: course.title,
+            completedLessons: completed,
+            totalLessons: total,
+            progress: percentage,
+            timeSpent,
+          };
+        }
+      );
+
+      // -----------------------------------------
+      // 8. Learning activity trend
+      // -----------------------------------------
+
+      const activityTrend =
+        await Activity.aggregate([
+          {
+            $match: {
+              studentId:
+                new mongoose.Types.ObjectId(
+                  studentId
+                ),
+            },
+          },
+
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: "%Y-%m-%d",
+                  date: "$createdAt",
+                },
+              },
+
+              minutes: {
+                $sum: {
+                  $ifNull: [
+                    "$timeSpent",
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+
+          {
+            $sort: {
+              _id: 1,
+            },
+          },
+        ]);
+
+      // -----------------------------------------
+      // 9. Active courses
+      // -----------------------------------------
+
+      const activeCourses =
+        courseProgress.filter(
+          (course) =>
+            course.progress > 0 &&
+            course.progress < 100
+        ).length;
+
+      // -----------------------------------------
+      // 10. Final response
+      // -----------------------------------------
 
       res.json({
+
+        // Dashboard statistics
         completedLessons,
         totalLessons,
         totalTime,
         overallProgress,
+        activeCourses,
+
+        // Course progress
+        courses: courseProgress,
+
+        // Chart
+        activityTrend,
+
+        // Recent activity
         recentActivity,
+
       });
+
     } catch (error) {
+
+      console.error(
+        "Student dashboard error:",
+        error
+      );
+
       res.status(500).json({
         message: error.message,
       });
     }
   }
 );
-
 router.post(
   "/lessons/:lessonId/complete",
   authMiddleware,
