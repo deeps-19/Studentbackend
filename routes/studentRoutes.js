@@ -376,4 +376,111 @@ router.post(
   }
 );
 
+router.get(
+  "/courses",
+  authMiddleware,
+  roleMiddleware("student"),
+  async (req, res) => {
+    try {
+      const studentId = req.user.id;
+
+      // Get all courses
+      const courses = await Course.find()
+        .sort({ createdAt: -1 })
+        .lean();
+
+      // Get all lessons
+      const lessons = await Lesson.find()
+        .lean();
+
+      // Get student's progress
+      const progress = await LessonProgress.find({
+        studentId,
+      }).lean();
+
+      const courseData = courses.map((course) => {
+        // Lessons belonging to this course
+        const courseLessons = lessons.filter(
+          (lesson) =>
+            lesson.courseId?.toString() ===
+            course._id.toString()
+        );
+
+        const lessonIds = courseLessons.map(
+          (lesson) => lesson._id.toString()
+        );
+
+        // Student progress for this course
+        const courseProgress = progress.filter(
+          (item) =>
+            item.courseId?.toString() ===
+              course._id.toString() &&
+            lessonIds.includes(
+              item.lessonId?.toString()
+            )
+        );
+
+        // Completed lessons
+        const completedLessons =
+          courseProgress.filter(
+            (item) =>
+              item.status === "completed"
+          ).length;
+
+        // Total lessons
+        const totalLessons =
+          courseLessons.length;
+
+        // Progress percentage
+        const progressPercentage =
+          totalLessons > 0
+            ? Math.round(
+                (completedLessons /
+                  totalLessons) *
+                  100
+              )
+            : 0;
+
+        // Time spent
+        const timeSpent =
+          courseProgress.reduce(
+            (sum, item) =>
+              sum + (item.timeSpent || 0),
+            0
+          );
+
+        return {
+          _id: course._id,
+          title: course.title,
+          description: course.description,
+          category: course.category,
+          image: course.image,
+
+          totalLessons,
+
+          completedLessons,
+
+          progress: progressPercentage,
+
+          timeSpent,
+        };
+      });
+
+      res.json({
+        courses: courseData,
+      });
+
+    } catch (error) {
+      console.error(
+        "Fetch courses error:",
+        error
+      );
+
+      res.status(500).json({
+        message: error.message,
+      });
+    }
+  }
+);
+
 module.exports = router;
