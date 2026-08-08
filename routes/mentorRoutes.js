@@ -14,7 +14,114 @@ const {
 } = require("../middleware/authMiddleware");
 
 const router = express.Router();
+router.post(
+  "/students",
+  authMiddleware,
+  roleMiddleware("mentor"),
+  async (req, res) => {
+    try {
+      const {
+        fullName,
+        email,
+        phone,
+        initialPassword,
+        course,
+        enrollDate,
+        status,
+        message,
+        sendEmail,
+      } = req.body;
 
+
+      // -----------------------------
+      // Validation
+      // -----------------------------
+
+      if (!fullName || !email || !initialPassword) {
+        return res.status(400).json({
+          message:
+            "Full name, email and password are required",
+        });
+      }
+
+
+      // -----------------------------
+      // Check existing student
+      // -----------------------------
+
+      const existingStudent = await User.findOne({
+        email: email.toLowerCase(),
+      });
+
+      if (existingStudent) {
+        return res.status(400).json({
+          message: "A user with this email already exists",
+        });
+      }
+
+
+      // -----------------------------
+      // Hash password
+      // -----------------------------
+
+      const hashedPassword = await bcrypt.hash(
+        initialPassword,
+        10
+      );
+
+
+      // -----------------------------
+      // Create student
+      // -----------------------------
+
+      const student = await User.create({
+        name: fullName,
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        role: "student",
+        phone: phone || "",
+      });
+
+
+      // -----------------------------
+      // Response
+      // -----------------------------
+
+      res.status(201).json({
+        message: "Student created successfully",
+
+        student: {
+          id: student._id,
+          name: student.name,
+          email: student.email,
+          role: student.role,
+          phone: student.phone,
+        },
+
+        enrollment: {
+          course: course || null,
+          enrollDate: enrollDate || null,
+          status: status || "active",
+        },
+
+        welcomeEmail: {
+          sendEmail: sendEmail || false,
+          message: message || "",
+        },
+      });
+
+    } catch (error) {
+      console.error(
+        "Add student error:",
+        error
+      );
+
+      res.status(500).json({
+        message: error.message,
+      });
+    }
+  }
+);
 router.post(
   "/courses",
   authMiddleware,
